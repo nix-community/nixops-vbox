@@ -66,7 +66,7 @@ class VirtualBoxState(MachineState):
         return super_flags + ["-i", self.get_ssh_private_key_file()]
 
     def get_physical_spec(self):
-        return {'imports': [RawValue('<nixops/virtualbox-image-nixops.nix>')]}
+        return {'imports': [RawValue('<virtualbox-image-nixops.nix>')]}
 
 
     def address_to(self, m):

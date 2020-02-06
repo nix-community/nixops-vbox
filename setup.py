@@ -9,7 +9,7 @@ setup(name='nixops-vbox',
       url='https://github.com/AmineChikhaoui/nixops-vbox',
       maintainer='Amine Chikhaoui',
       maintainer_email='amine.chikhaoui91@gmail.com',
-      packages=['nixopsvbox', 'nixopsvbox.backends'],
+      packages=['nixopsvbox', 'nixopsvbox.backends', 'nixopsvbox.resources'],
       entry_points={'nixops': ['vbox = nixopsvbox.plugin']},
       py_modules=['plugin']
 )

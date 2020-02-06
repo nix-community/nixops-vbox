@@ -1,6 +1,7 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, resources, ... }:
 
 with lib;
+with import <nixops/lib.nix> lib;
 
 let
 
@@ -89,6 +90,35 @@ in
         };
 
       });
+    };
+
+    deployment.virtualbox.networks = mkOption {
+        default = [ { type = "nat"; } { type = "hostonly"; name = "vboxnet0"; } ];
+        description = ''
+          The list of networks to which the instance is attached. The network can be either
+          a vbox-network resource or a network not managed by NixOps.
+
+          For the sake of backward compatibility, the default list contains the following networks:
+           - NAT
+           - Host-only network vboxnet0
+
+          Note: NixOps requires at least one Host-only network to access the instance for management purposes,
+          When multiple Host-only networks exist, the first one in the list will be used for machine connection.
+        '';
+        type = with types; listOf (either (resource "vbox-network")
+            (submodule { options = {
+                             name = mkOption {
+                                 default = "";
+                                 description = "The name of the network not managed by NixOps";
+                                 type = str;
+                             };
+                             type = mkOption {
+                                 description = "The type of the network";
+                                 type = enum [ "nat" "natnet" "bridge" "hostonly" "intnet" "generic" ];
+                             };
+                         };
+                       })
+        );
     };
 
     deployment.virtualbox.sharedFolders = mkOption {

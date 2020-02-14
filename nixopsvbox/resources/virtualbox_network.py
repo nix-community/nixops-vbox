@@ -46,6 +46,8 @@ class VirtualBoxNetworkState(ResourceState):
     network_type  = attr_property("virtualbox.network_type", None)
     network_cidr  = attr_property("virtualbox.network_cidr", None)
 
+    _lock  = threading.Lock()
+
     @classmethod
     def get_type(cls):
         return "vbox-network"
@@ -84,11 +86,13 @@ class VirtualBoxNetworkState(ResourceState):
 
         if self.state != self.UP or not self.network_name:
             self.log("creating {}...".format(self.full_name))
-            self.network_name = VirtualBoxNetworks[defn.network_type].create(self, defn).name
+            with self._lock:
+                self.network_name = VirtualBoxNetworks[defn.network_type].create(self, defn).name
             self.state = self.UP
         else:
             self.log("updating {}...".format(self.full_name))
-            self.network_name = VirtualBoxNetworks[defn.network_type](self.network_name).update(self, defn).name
+            with self._lock:
+                self.network_name = VirtualBoxNetworks[defn.network_type](self.network_name).update(self, defn).name
             self.state = self.UP
 
     def destroy(self, wipe=False):
@@ -96,7 +100,9 @@ class VirtualBoxNetworkState(ResourceState):
         if not self.depl.logger.confirm("are you sure you want to destroy {}?".format(self.full_name)):
             return False
 
-            self.log("destroying {}...".format(self.full_name))
+        self.log("destroying {}...".format(self.full_name))
+
+        with self._lock:
             VirtualBoxNetworks[self.network_type](self.network_name).destroy()
 
         return True
@@ -107,8 +113,6 @@ class VirtualBoxNetworkState(ResourceState):
 
         with self.depl._db:
             self.network_name = None
-            self.network_type = None
-            self.network_cidr = None
             self.state = self.MISSING
 
         return False
@@ -179,6 +183,7 @@ class VirtualBoxHostNetwork(VirtualBoxNetwork):
 
     @classmethod
     def create(cls, state, defn):
+
         name = re.match(r"^.*'(vboxnet\d+)'.*$", logged_exec([
             "VBoxManage", "hostonlyif", "create"
         ], cls.logger, capture_stdout=True)).group(1)
@@ -206,7 +211,6 @@ class VirtualBoxHostNetwork(VirtualBoxNetwork):
 
 class VirtualBoxNatNetwork(VirtualBoxNetwork):
     _pattern = "NatNetwork{}"
-    _lock    = threading.Lock()
 
     def __init__(self, name):
         super(VirtualBoxNatNetwork, self).__init__(name);
@@ -217,13 +221,12 @@ class VirtualBoxNatNetwork(VirtualBoxNetwork):
             exists = cls.findall()
             return cls._pattern.format(int(exists[-1][len(cls._pattern.format("")):])+1 if exists else 1)
 
-        with cls._lock:
-            name = new_name()
-            logged_exec([
-                "VBoxManage", "natnetwork", "add", "--netname", name, "--network", defn.network_cidr
-            ], cls.logger)
+        name = new_name()
+        logged_exec([
+            "VBoxManage", "natnetwork", "add", "--netname", name, "--network", defn.network_cidr
+        ], cls.logger)
 
-            return cls(name).update(state, defn)
+        return cls(name).update(state, defn)
 
     @classmethod
     def findall(cls):
@@ -234,7 +237,7 @@ class VirtualBoxNatNetwork(VirtualBoxNetwork):
     def update(self, state, defn):
         logged_exec(["VBoxManage", "natnetwork", "modify", "--netname", self._name, "--network", defn.network_cidr, "--enable", "--dhcp", "on"], self.logger)
         self.setup_dhcp_server(state, defn)
-        logged_exec(["VBoxManage", "natnetwork", "start" , "--netname", self._name], self.logger, check=False)
+        #logged_exec(["VBoxManage", "natnetwork", "start" , "--netname", self._name], self.logger, check=False)
         return self
 
     def destroy(self):

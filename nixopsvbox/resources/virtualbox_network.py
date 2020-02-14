@@ -80,23 +80,38 @@ class VirtualBoxNetworkState(ResourceState):
         self.network_cidr = defn.network_cidr;
 
         if check:
-            pass
+            self.check()
 
-        if self.state != self.UP:
+        if self.state != self.UP or not self.network_name:
             self.log("creating {}...".format(self.full_name))
             self.network_name = VirtualBoxNetworks[defn.network_type].create(self, defn).name
-
+            self.state = self.UP
+        else:
+            self.log("updating {}...".format(self.full_name))
+            self.network_name = VirtualBoxNetworks[defn.network_type](self.network_name).update(self, defn).name
             self.state = self.UP
 
     def destroy(self, wipe=False):
-        if self.state == self.UP:
-            if not self.depl.logger.confirm("are you sure you want to destroy {}?".format(self.full_name)):
-                return False
+        if self.state != self.UP: return True
+        if not self.depl.logger.confirm("are you sure you want to destroy {}?".format(self.full_name)):
+            return False
 
             self.log("destroying {}...".format(self.full_name))
             VirtualBoxNetworks[self.network_type](self.network_name).destroy()
 
         return True
+
+    def _check(self):
+        if self.network_name and self.network_type and self.network_name in VirtualBoxNetworks[self.network_type].findall():
+            return super(VirtualBoxNetworkState, self)._check()
+
+        with self.depl._db:
+            self.network_name = None
+            self.network_type = None
+            self.network_cidr = None
+            self.state = self.MISSING
+
+        return False
 
 class VirtualBoxNetwork(object):
     """Wrapper for VBoxManage CLI network operations"""
@@ -136,18 +151,20 @@ class VirtualBoxNetwork(object):
             mstate = state.depl.resources.get(machine)
             mdefn  = state.depl.definitions.get(machine)
             if isinstance(mstate, VirtualBoxState) and isinstance(mdefn, VirtualBoxDefinition):
-                print(mstate)
-                print(mdefn)
                 k    = "{name}:{network_type}".format(**defn.__dict__)
                 nics = mstate.parse_nic_spec(mdefn)
+
                 if nics.get(k):
-                    mstate.add_hook("after_createvm", lambda : logged_exec([
+
+                    def set_static_ip(): logged_exec([
                         "VBoxManage", "dhcpserver", "modify",
                         "--netname" , self._name,
                         "--vm"      , mstate.vm_id,
                         "--nic"     , str(nics[k]["num"]),
                         "--fixed-address", address
-                    ], self.logger))
+                    ], self.logger)
+
+                    set_static_ip() if mstate.vm_id else mstate.add_hook("after_createvm", set_static_ip)
 
         return subnet
 
@@ -155,7 +172,6 @@ class VirtualBoxNetwork(object):
         logged_exec(["VBoxManage", "dhcpserver", "remove", "--netname", self._name], self.logger, check=False)
 
 class VirtualBoxHostNetwork(VirtualBoxNetwork):
-    _if_prefix = "vboxnet";
 
     def __init__(self, name):
         super(VirtualBoxHostNetwork, self).__init__("HostInterfaceNetworking-{}".format(name))
@@ -218,7 +234,7 @@ class VirtualBoxNatNetwork(VirtualBoxNetwork):
     def update(self, state, defn):
         logged_exec(["VBoxManage", "natnetwork", "modify", "--netname", self._name, "--network", defn.network_cidr, "--enable", "--dhcp", "on"], self.logger)
         self.setup_dhcp_server(state, defn)
-        logged_exec(["VBoxManage", "natnetwork", "start" , "--netname", self._name], self.logger)
+        logged_exec(["VBoxManage", "natnetwork", "start" , "--netname", self._name], self.logger, check=False)
         return self
 
     def destroy(self):

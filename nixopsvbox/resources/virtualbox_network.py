@@ -139,7 +139,7 @@ class VirtualBoxNetwork(object):
         ], cls.logger, capture_stdout=True))
 
     def setup_dhcp_server(self, state, defn):
-        subnet = ipaddress.ip_network(unicode(defn.network_cidr), strict=True)
+        subnet = ipaddress.ip_network(unicode(defn.network_cidr), strict=False)
 
         logged_exec([
             "VBoxManage" , "dhcpserver", "modify" if self._name in self._findall_dhcped() else "add",

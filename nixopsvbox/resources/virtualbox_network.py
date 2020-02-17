@@ -6,7 +6,6 @@ import os
 import re
 import ipaddress
 import threading
-from collections import namedtuple
 from nixops.util import attr_property, logged_exec
 from nixops.resources import ResourceDefinition, ResourceState
 from nixopsvbox.backends.virtualbox import VirtualBoxDefinition, VirtualBoxState
@@ -27,14 +26,8 @@ class VirtualBoxNetworkDefinition(ResourceDefinition):
         self.network_type = xml.find("attrs/attr[@name='type']/string").get("value")
         self.network_cidr = xml.find("attrs/attr[@name='cidrBlock']/string").get("value")
 
-        static_ip=namedtuple("static_ip", ["machine", "address"])
-        def parse_static_ips(x):
-            return static_ip(
-                x.find("attr[@name='machine']/string").get("value"),
-                x.find("attr[@name='address']/string").get("value")
-            )
-
-        self.static_ips = [ parse_static_ips(f) for f in xml.findall("attrs/attr[@name='staticIPs']/list/attrs") ]
+        self.static_ips = { x.find("attr[@name='machine']/string").get("value"):
+                            x.find("attr[@name='address']/string").get("value") for x in xml.findall("attrs/attr[@name='staticIPs']/list/attrs") }
 
     def show_type(self):
         return "{0} [{1:8} {2}]".format(self.get_type(), self.network_type, self.network_cidr)
@@ -45,6 +38,7 @@ class VirtualBoxNetworkState(ResourceState):
     network_name  = attr_property("virtualbox.network_name", None)
     network_type  = attr_property("virtualbox.network_type", None)
     network_cidr  = attr_property("virtualbox.network_cidr", None)
+    static_ips    = attr_property("virtualbox.static_ips", [], "json")
 
     _lock  = threading.Lock()
 
@@ -78,22 +72,41 @@ class VirtualBoxNetworkState(ResourceState):
     def create(self, defn, check, allow_reboot, allow_recreate):
         assert isinstance(defn, VirtualBoxNetworkDefinition)
 
-        self.network_type = defn.network_type;
-        self.network_cidr = defn.network_cidr;
+        if check: self.check()
 
-        if check:
-            self.check()
-
-        if self.state != self.UP or not self.network_name:
+        if self.state != self.UP:
             self.log("creating {}...".format(self.full_name))
             with self._lock:
+                self.network_type = defn.network_type
+                self.network_cidr = defn.network_cidr
+                self.static_ips   = defn.static_ips
                 self.network_name = VirtualBoxNetworks[defn.network_type].create(self, defn).name
-            self.state = self.UP
-        else:
-            self.log("updating {}...".format(self.full_name))
+                self.state = self.UP
+            return
+
+        self.log("updating {}...".format(self.full_name))
+        if self._can_update(defn, allow_reboot, allow_recreate):
             with self._lock:
+                self.network_cidr = defn.network_cidr
+                self.static_ips   = defn.static_ips
                 self.network_name = VirtualBoxNetworks[defn.network_type](self.network_name).update(self, defn).name
-            self.state = self.UP
+                self.state = self.UP
+            return
+
+    def _can_update(self, defn, allow_reboot, allow_recreate):
+        if self.network_type != defn.network_type:
+            self.warn("change of the network type from {0} to {1} is not supported; skipping".format(self.network_type, defn.network_type))
+            return False
+
+        if self.network_cidr != defn.network_cidr and not allow_reboot:
+            self.warn("change of the network CIDR from {0} to {1} requires reboot; skipping".format(self.network_cidr, defn.network_cidr))
+            return False
+
+        if any(defn.static_ips.get(machine) != address for machine, address in self.static_ips.iteritems()) and not allow_reboot:
+            self.warn("change of existing bindings for static IPs requires reboot; skipping")
+            return False
+
+        return True
 
     def destroy(self, wipe=False):
         if self.state != self.UP: return True
@@ -107,9 +120,22 @@ class VirtualBoxNetworkState(ResourceState):
 
         return True
 
+
+    # def _is_attached(self):
+    #     for m in self.depl.resources.values if isintance(m, VirtualBoxState):
+    #         if m.
+
+    #     if isinstance(mstate, VirtualBoxState) and isinstance(mdefn, VirtualBoxDefinition):
+    #         k    = "{_name}:{network_type}".format(**self.__dict__)
+    #         nics = mstate.parse_nic_spec(mdefn)
+    #         if nics.has(k)
+
     def _check(self):
-        if self.network_name and self.network_type and self.network_name in VirtualBoxNetworks[self.network_type].findall():
+        if self.network_type and self.network_name in VirtualBoxNetworks[self.network_type].findall():
             return super(VirtualBoxNetworkState, self)._check()
+
+        if self.network_name:
+            self.warn("'{0}' seems to have been destroyed unexpectedly. To fix the issue, please re-run ‘nixops deploy‘ with ‘--allow-reboot‘ option".format(self.network_name))
 
         with self.depl._db:
             self.network_name = None
@@ -151,7 +177,7 @@ class VirtualBoxNetwork(object):
             "--enable"
         ], self.logger)
 
-        for machine, address in defn.static_ips:
+        for machine, address in defn.static_ips.iteritems():
             mstate = state.depl.resources.get(machine)
             mdefn  = state.depl.definitions.get(machine)
             if isinstance(mstate, VirtualBoxState) and isinstance(mdefn, VirtualBoxDefinition):
@@ -169,6 +195,11 @@ class VirtualBoxNetwork(object):
                     ], self.logger)
 
                     set_static_ip() if mstate.vm_id else mstate.add_hook("after_createvm", set_static_ip)
+
+                else:
+                    state.warn("cannot assign a static IP '{0}' to non-attached machine '{1}'".format(address, machine))
+            else:
+                state.warn("cannot assign a static IP '{0}' to non-existent machine '{1}'".format(address, machine))
 
         return subnet
 

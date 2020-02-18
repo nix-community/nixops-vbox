@@ -11,7 +11,7 @@ rec {
               The type of the VirtualBox network.
               Either NAT network or Host-only network can be specified. Defaults to Host-only Network.
             '';
-            type = types.enum [ "natnet" "hostonly" ];
+            type = types.enum [ "natnetwork" "hostonly" ];
         };
 
         cidrBlock = mkOption {

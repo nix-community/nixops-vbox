@@ -125,12 +125,51 @@ class VirtualBoxState(MachineState):
             raise Exception("unable to get state of VirtualBox VM ‘{0}’".format(self.name))
         return vminfo['VMState'].replace('"', '')
 
+    def _get_nic_info(self, network_types=None, start=1, can_fail=False):
+        def to_adaptor(type):
+            if   type == "bridged"    : return "bridgeadapter{}"
+            elif type == "hostonly"   : return "hostonlyadapter{}"
+            elif type == "intnet"     : return "intnet{}"
+            elif type == "natnetwork" : return "nat-network{}"
+            elif type == "generic"    : return "generic{}"
+            elif type == "nat"        : return "natnet{}"
+            else:
+                raise Exception("unknown NIC type is specified on VirtualBox VM ‘{0}’".format(self.name))
+
+        vminfo = self._get_vm_info(can_fail)
+        if not vminfo: return
+
+        if network_types is None: network_types = [ "hostonly" ]
+
+        for k, v in vminfo.iteritems():
+            v = v.lower()
+            if k.startswith("nic") and v in network_types:
+                i = int(k[len("nic"):]) - (1 - start)
+                yield (i, v, vminfo.get(to_adaptor(v).format(i)))
+
+    def _get_nic_flags(self, defn):
+        def to_adaptor(type):
+            if   type == "bridged"    : return "--bridgeadapter{}"
+            elif type == "hostonly"   : return "--hostonlyadapter{}"
+            elif type == "intnet"     : return "--intnet{}"
+            elif type == "natnetwork" : return "--nat-network{}"
+            elif type == "generic"    : return "--nicgenericdrv{}"
+            elif type == "nat"        : return ""
+            else:
+                raise Exception("unknown NIC type is specified on VirtualBox VM ‘{0}’".format(self.name))
+
+        return (filter (None, [
+            "--nic{0}".format(i)     , net.get("type"),
+            "--nictype{0}".format(i) , "virtio",
+            to_adaptor(net.get("type")).format(i),
+            self.depl.resources[net.get("_name")].network_name if net.get("_name") else net.get("name", "")
+        ]) for i, net in enumerate(defn.config["virtualbox"]["networks"], start=1))
 
     def _start(self):
-        nic_num, _ = next(self._get_nic_info())
+        i, _, _ = next(self._get_nic_info(start=0))
 
         self._logged_exec(
-            ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(nic_num - 1), ''])
+            ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(i), ''])
 
         self._logged_exec(
             ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Charon/ClientPublicKey", self._client_public_key])
@@ -141,13 +180,14 @@ class VirtualBoxState(MachineState):
         self.state = self.STARTING
 
     def _update_ip(self):
-        nic_num, _ = next(self._get_nic_info())
+        i, _, _ = next(self._get_nic_info(start=0))
 
         res = self._logged_exec(
-            ["VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(nic_num - 1)],
+            ["VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(i)],
             capture_stdout=True).rstrip()
         if res[0:7] != "Value: ": return
         new_address = res[7:]
+
         nixops.known_hosts.update(self.private_ipv4, new_address, self.public_host_key)
         self.private_ipv4 = new_address
 
@@ -365,7 +405,7 @@ class VirtualBoxState(MachineState):
                  "--vram", "10",
                  "--nestedpaging", "off",
                  "--paravirtprovider", "kvm"
-            ] + [ f for fs in [ nic["flags"] for nic in self.parse_nic_spec(defn, flags=True).values() ] for f in fs if f ]
+            ] + [ f for flags in self._get_nic_flags(defn) for f in flags ]
 
             vcpus = defn.config["virtualbox"]["vcpu"]  # None or integer
             if vcpus is not None:
@@ -488,41 +528,6 @@ class VirtualBoxState(MachineState):
             MachineState._check(self, res)
         else:
             self.state = self.UNKNOWN
-
-    def _get_nic_info(self, network_type="hostonly"):
-        res = re.findall(r"nic(\d+)=\"({})\"".format(network_type), self._logged_exec(
-            ["VBoxManage", "showvminfo", self.vm_id, "--machinereadable"],
-            capture_stdout=True
-        ))
-        return ((int(num), type) for num, type in res)
-
-    def parse_nic_spec(self, defn, num=True, flags=False):
-        def to_arg(type):
-            if   type == "bridge": return "bridged"
-            elif type == "natnet": return "natnetwork"
-            else:
-                return type
-
-        def to_adp(type):
-            if   type == "bridge"  : return "--bridgeadapter{}"
-            elif type == "hostonly": return "--hostonlyadapter{}"
-            elif type == "intnet"  : return "--intnet{}"
-            elif type == "natnet"  : return "--nat-network{}"
-            elif type == "generic" : return "--nicgenericdrv{}"
-            elif type == "nat"     : return ""
-            else:
-                raise Exception("unknown NIC type is specified on VirtualBox VM ‘{0}’".format(self.name))
-
-        res = defaultdict(lambda: {})
-        for i, net in enumerate(defn.config["virtualbox"]["networks"], start=1):
-            k = "{0}:{1}".format(net.get("name", net.get("_name")), net.get("type"))
-            if num  : res[k]["num"]   = i
-            if flags: res[k]["flags"] = [
-                    "--nic{0}".format(i)           , to_arg(net.get("type")),
-                    "--nictype{0}".format(i)       , "virtio",
-                    to_adp(net.get("type")).format(i), self.depl.resources[net.get("_name")].network_name if net.get("_name") else net.get("name", "")
-            ]
-        return res
 
     def add_hook(self, k, handler):
         self._hooks[k].append(handler)

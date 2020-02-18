@@ -282,5 +282,5 @@ class VirtualBoxNatNetwork(VirtualBoxNetwork):
 
 VirtualBoxNetworks = {
     "hostonly" : VirtualBoxHostNetwork,
-    "natnet"   : VirtualBoxNatNetwork,
+    "natnetwork"   : VirtualBoxNatNetwork,
 }

@@ -102,6 +102,7 @@ class VirtualBoxNetworkState(ResourceState):
             self.warn("change of the network CIDR from {0} to {1} requires reboot; skipping".format(self.network_cidr, defn.network_cidr))
             return False
 
+        # checkme: the state of the attached machine should also be considered
         if any(defn.static_ips.get(machine) != address for machine, address in self.static_ips.iteritems()) and not allow_reboot:
             self.warn("change of existing bindings for static IPs requires reboot; skipping")
             return False
@@ -181,25 +182,29 @@ class VirtualBoxNetwork(object):
             mstate = state.depl.resources.get(machine)
             mdefn  = state.depl.definitions.get(machine)
             if isinstance(mstate, VirtualBoxState) and isinstance(mdefn, VirtualBoxDefinition):
-                k    = "{name}:{network_type}".format(**defn.__dict__)
-                nics = mstate.parse_nic_spec(mdefn)
+                for i, net in enumerate(mdefn.config["virtualbox"]["networks"], start=1):
+                    if net.get("_name") == defn.name and net.get("type") == defn.network_type:
+                        def set_static_ip():
+                            try:
+                                if ipaddress.ip_address(unicode(address)) not in subnet:
+                                    raise Exception("cannot assign a static IP out of the network CIDR")
+                                logged_exec([
+                                    "VBoxManage", "dhcpserver", "modify",
+                                    "--netname" , self._name,
+                                    "--vm"      , mstate.vm_id,
+                                    "--nic"     , str(i),
+                                    "--fixed-address", address
+                                ], self.logger)
+                            except:
+                                state.warn("cannot assign static IP '{0}' to machine '{1}' in subnet '{2}'".format(address, machine, defn.network_cidr))
 
-                if nics.get(k):
+                        set_static_ip() if mstate.vm_id else mstate.add_hook("after_createvm", set_static_ip)
 
-                    def set_static_ip(): logged_exec([
-                        "VBoxManage", "dhcpserver", "modify",
-                        "--netname" , self._name,
-                        "--vm"      , mstate.vm_id,
-                        "--nic"     , str(nics[k]["num"]),
-                        "--fixed-address", address
-                    ], self.logger)
-
-                    set_static_ip() if mstate.vm_id else mstate.add_hook("after_createvm", set_static_ip)
-
+                        break;
                 else:
-                    state.warn("cannot assign a static IP '{0}' to non-attached machine '{1}'".format(address, machine))
+                    state.warn("cannot assign static IP '{0}' to non-attached machine '{1}'".format(address, machine))
             else:
-                state.warn("cannot assign a static IP '{0}' to non-existent machine '{1}'".format(address, machine))
+                state.warn("cannot assign static IP '{0}' to non-existent machine '{1}'".format(address, machine))
 
         return subnet
 

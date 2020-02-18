@@ -7,7 +7,7 @@ import shutil
 import stat
 import re
 import ipaddress
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from nixops.backends import MachineDefinition, MachineState
 from nixops.nix_expr import RawValue
 import nixops.known_hosts
@@ -140,13 +140,13 @@ class VirtualBoxState(MachineState):
         vminfo = self._get_vm_info(can_fail)
         if not vminfo: return
 
+        nic_info=namedtuple("nic_info", ["index", "type", "name"])
         if network_types is None: network_types = [ "hostonly" ]
-
         for k, v in vminfo.iteritems():
             v = v.lower()
             if k.startswith("nic") and v in network_types:
                 i = int(k[len("nic"):]) - (1 - start)
-                yield (i, v, vminfo.get(to_adaptor(v).format(i)))
+                yield nic_info(i, v, vminfo.get(to_adaptor(v).format(i)))
 
     def _get_nic_flags(self, defn):
         def to_adaptor(type):
@@ -167,10 +167,8 @@ class VirtualBoxState(MachineState):
         ]) for i, net in enumerate(defn.config["virtualbox"]["networks"], start=1))
 
     def _start(self):
-        i, _, _ = next(self._get_nic_info(start=0))
-
         self._logged_exec(
-            ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(i), ''])
+            ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(next(self._get_nic_info(start=0)).index), ''])
 
         self._logged_exec(
             ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Charon/ClientPublicKey", self._client_public_key])
@@ -181,10 +179,9 @@ class VirtualBoxState(MachineState):
         self.state = self.STARTING
 
     def _update_ip(self):
-        i, _, _ = next(self._get_nic_info(start=0))
 
         res = self._logged_exec(
-            ["VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(i)],
+            ["VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(next(self._get_nic_info(start=0)).index)],
             capture_stdout=True).rstrip()
         if res[0:7] != "Value: ": return
         new_address = res[7:]

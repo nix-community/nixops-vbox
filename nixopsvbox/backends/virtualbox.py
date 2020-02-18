@@ -470,7 +470,7 @@ class VirtualBoxState(MachineState):
 
             self.log_start("shutting down... ")
 
-            if self.state != self.UNREACHABLE:
+            if self.state == self.UP:
                 self.run_command("systemctl poweroff", check=False)
             else:
                 self._logged_exec(["VBoxManage", "controlvm", self.vm_id, "poweroff"], check=False)
@@ -478,12 +478,14 @@ class VirtualBoxState(MachineState):
             self.state = self.STOPPING
 
             while True:
-                state = self._get_vm_state()
+                state = self._get_vm_state(can_fail=True)
                 self.log_continue("[{0}] ".format(state))
                 if state == 'poweroff': break
                 time.sleep(1)
 
                 self.log_end("")
+
+        time.sleep(1) # hack to work around "machine locked" errors
 
         self.state = self.STOPPED
         self.ssh_master = None

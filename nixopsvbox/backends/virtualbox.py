@@ -45,6 +45,7 @@ class VirtualBoxState(MachineState):
     public_host_key = nixops.util.attr_property("virtualbox.publicHostKey", None)
     private_host_key = nixops.util.attr_property("virtualbox.privateHostKey", None)
     shared_folders = nixops.util.attr_property("virtualbox.sharedFolders", {}, 'json')
+    networks = nixops.util.attr_property("virtualbox.networks", [], 'json')
 
     # Obsolete.
     disk = nixops.util.attr_property("virtualbox.disk", None)
@@ -148,7 +149,7 @@ class VirtualBoxState(MachineState):
                 i = int(k[len("nic"):]) - (1 - start)
                 yield nic_info(i, v, vminfo.get(to_adaptor(v).format(i)))
 
-    def _get_nic_flags(self, defn):
+    def _get_nic_flags(self, networks):
         def to_adaptor(type):
             if   type == "bridged"    : return "--bridgeadapter{}"
             elif type == "hostonly"   : return "--hostonlyadapter{}"
@@ -164,7 +165,7 @@ class VirtualBoxState(MachineState):
             "--nictype{0}".format(i) , "virtio",
             to_adaptor(net.get("type")).format(i),
             self.depl.resources[net.get("_name")].network_name if net.get("_name") else net.get("name", "")
-        ]) for i, net in enumerate(defn.config["virtualbox"]["networks"], start=1))
+        ]) for i, net in enumerate(networks, start=1))
 
     def _start(self):
         self._logged_exec(
@@ -403,25 +404,39 @@ class VirtualBoxState(MachineState):
         if not self._client_private_key:
             (self._client_private_key, self._client_public_key) = nixops.util.create_key_pair()
 
-        if not self.started:
+
+        network_changed = False
+        if self.networks != defn.config["virtualbox"]["networks"]:
+            network_changed = True
+
+        if any([self.state in [ self.MISSING, self.STOPPED ],
+                network_changed and allow_reboot]):
+
+            if self.state not in [ self.MISSING, self.STOPPED ] and allow_reboot:
+                self.stop()
+
             modifyvm_args = [
                  "--memory", str(defn.config["virtualbox"]["memorySize"]),
                  "--vram", "10",
                  "--nestedpaging", "off",
                  "--paravirtprovider", "kvm"
-            ] + [ f for flags in self._get_nic_flags(defn) for f in flags ]
+            ]
 
             vcpus = defn.config["virtualbox"]["vcpu"]  # None or integer
             if vcpus is not None:
                 modifyvm_args.extend(["--cpus", str(vcpus)])
+
+            networks = defn.config["virtualbox"]["networks"]
+            for nics in self._get_nic_flags(networks):
+                modifyvm_args.extend(nics)
+
             # Include arbitrary additional arguments
             modifyvm_args.extend(defn.config["virtualbox"]["vmFlags"])
 
-            if self.state not in [ self.MISSING, self.STOPPED ] and allow_reboot:
-                self.stop()
-
             self._logged_exec(
                 ["VBoxManage", "modifyvm", self.vm_id] + modifyvm_args)
+
+            self.networks = networks
 
             self._headless = defn.config["virtualbox"]["headless"]
             self._start()

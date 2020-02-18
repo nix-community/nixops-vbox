@@ -419,7 +419,11 @@ class VirtualBoxState(MachineState):
 
             self.log_start("shutting down... ")
 
-            self.run_command("systemctl poweroff", check=False)
+            if self.state != self.UNREACHABLE:
+                self.run_command("systemctl poweroff", check=False)
+            else:
+                self._logged_exec(["VBoxManage", "controlvm", self.vm_id, "poweroff"], check=False)
+
             self.state = self.STOPPING
 
             while True:

@@ -5,7 +5,7 @@ let
 in
 {
     resources.vboxNetworks.net1 = {
-        type = "natnet";
+        type = "natnetwork";
         cidrBlock = "192.168.100.0/24";
     };
 

@@ -372,6 +372,10 @@ class VirtualBoxState(MachineState):
                 modifyvm_args.extend(["--cpus", str(vcpus)])
             # Include arbitrary additional arguments
             modifyvm_args.extend(defn.config["virtualbox"]["vmFlags"])
+
+            if self.state not in [ self.MISSING, self.STOPPED ] and allow_reboot:
+                self.stop()
+
             self._logged_exec(
                 ["VBoxManage", "modifyvm", self.vm_id] + modifyvm_args)
 

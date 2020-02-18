@@ -6,6 +6,7 @@ import time
 import shutil
 import stat
 import re
+import ipaddress
 from collections import defaultdict
 from nixops.backends import MachineDefinition, MachineState
 from nixops.nix_expr import RawValue
@@ -188,9 +189,15 @@ class VirtualBoxState(MachineState):
         if res[0:7] != "Value: ": return
         new_address = res[7:]
 
-        nixops.known_hosts.update(self.private_ipv4, new_address, self.public_host_key)
-        self.private_ipv4 = new_address
+        self.private_ipv4 = None
+        try:
+            if ipaddress.ip_address(unicode(new_address)).is_link_local:
+                raise Exception("cannot use link-local address as private IPv4 address")
 
+            nixops.known_hosts.update(self.private_ipv4, new_address, self.public_host_key)
+            self.private_ipv4 = new_address
+        except:
+            self.warn("cannot use {} as private IPv4 address for machine connection".format(new_address))
 
     def _update_disk(self, name, state):
         disks = self.disks
@@ -214,7 +221,7 @@ class VirtualBoxState(MachineState):
         self.log_start("waiting for IP address...")
         while True:
             self._update_ip()
-            if self.private_ipv4 != None: break
+            if self.private_ipv4: break
             time.sleep(1)
             self.log_continue(".")
         self.log_end(" " + self.private_ipv4)

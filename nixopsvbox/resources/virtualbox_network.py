@@ -168,8 +168,13 @@ class VirtualBoxNetwork(object):
     def setup_dhcp_server(self, state, defn):
         subnet = ipaddress.ip_network(unicode(defn.network_cidr), strict=False)
 
+        if self._name in self._findall_dhcped():
+            logged_exec([
+                "VBoxManage" , "dhcpserver", "remove", "--netname" , self._name
+            ], self.logger, check=False)
+
         logged_exec([
-            "VBoxManage" , "dhcpserver", "modify" if self._name in self._findall_dhcped() else "add",
+            "VBoxManage" , "dhcpserver", "add",
             "--netname"  , self._name,
             "--netmask"  , str(subnet.netmask),
             "--ip"       , str(subnet[2]),

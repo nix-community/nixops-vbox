@@ -60,6 +60,10 @@ class VirtualBoxState(MachineState):
     def resource_id(self):
         return self.vm_id
 
+    @property
+    def stopped(self):
+        self.state in [ self.MISSING, self.STOPPED ]
+
     def get_ssh_name(self):
         assert self.private_ipv4
         return self.private_ipv4
@@ -73,7 +77,6 @@ class VirtualBoxState(MachineState):
 
     def get_physical_spec(self):
         return {'imports': [RawValue('<virtualbox-image-nixops.nix>')]}
-
 
     def address_to(self, m):
         if isinstance(m, VirtualBoxState):
@@ -205,7 +208,6 @@ class VirtualBoxState(MachineState):
         else:
             disks[name] = state
         self.disks = disks
-
 
     def _update_shared_folder(self, name, state):
         shared_folders = self.shared_folders
@@ -406,21 +408,17 @@ class VirtualBoxState(MachineState):
             (self._client_private_key, self._client_public_key) = nixops.util.create_key_pair()
 
 
-        network_changed = False
-        if self.networks != defn.config["virtualbox"]["networks"]:
-            network_changed = True
+        # Update VM settings such as cpus, memory, networks, etc.
+        network_changed = allow_reboot if self.networks != defn.config["virtualbox"]["networks"] else False
 
-        if any([self.state in [ self.MISSING, self.STOPPED ],
-                network_changed and allow_reboot]):
-
-            if self.state not in [ self.MISSING, self.STOPPED ] and allow_reboot:
-                self.stop()
+        if any([self.stopped, network_changed]):
+            if allow_reboot and not self.stopped: self.stop()
 
             modifyvm_args = [
-                 "--memory", str(defn.config["virtualbox"]["memorySize"]),
-                 "--vram", "10",
-                 "--nestedpaging", "off",
-                 "--paravirtprovider", "kvm"
+                "--memory", str(defn.config["virtualbox"]["memorySize"]),
+                "--vram", "10",
+                "--nestedpaging", "off",
+                "--paravirtprovider", "kvm"
             ]
 
             vcpus = defn.config["virtualbox"]["vcpu"]  # None or integer
@@ -438,13 +436,15 @@ class VirtualBoxState(MachineState):
                 ["VBoxManage", "modifyvm", self.vm_id] + modifyvm_args)
 
             self.networks = networks
+            # Force update the private ip if networks has changed
+            if network_changed:
+                self.private_ipv4 = None
 
             self._headless = defn.config["virtualbox"]["headless"]
             self._start()
 
         if not self.private_ipv4 or check:
             self._wait_for_ip()
-
 
     def destroy(self, wipe=False):
         if not self.vm_id: return True
@@ -519,8 +519,8 @@ class VirtualBoxState(MachineState):
         if prev_ipv4 != self.private_ipv4:
             self.warn("IP address has changed, you may need to run ‘nixops deploy’")
 
-        self.wait_for_ssh(check=True)
-
+        if self.state != self.UNREACHABLE:
+            self.wait_for_ssh(check=True)
 
     def _check(self, res):
         if not self.vm_id:

@@ -62,7 +62,7 @@ class VirtualBoxState(MachineState):
 
     @property
     def stopped(self):
-        self.state in [ self.MISSING, self.STOPPED ]
+        return self.state in [ self.MISSING, self.STOPPED ]
 
     def get_ssh_name(self):
         assert self.private_ipv4
@@ -203,16 +203,17 @@ class VirtualBoxState(MachineState):
         # checkme: It might be too strong to enforce the consistency if we clear the old value.
         # nixops.known_hosts.update(self.private_ipv4, None, self.public_host_key)
         # self.private_ipv4 = None
-
-        new_address = re.search(r"^Value: *([0-9.]+) *$", self._logged_exec([
-            "VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(next(self._get_nic_info(start=0)).index)
-        ], capture_stdout=True).rstrip())
-
         try:
-            if not new_address:
+            got_address = re.search(r"^Value: *([0-9.]+) *$", self._logged_exec([
+                "VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(next(self._get_nic_info(start=0)).index)
+            ], capture_stdout=True).rstrip())
+
+            if not got_address:
                 if self.state == self.STARTING:
                     return False
                 raise UserWarning("retrieve")
+
+            new_address = got_address.group(1)
 
             if ipaddress.ip_address(unicode(new_address)).is_link_local:
                 raise UserWarning("use link-local address {} as".format(new_address))

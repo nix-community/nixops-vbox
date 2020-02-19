@@ -144,9 +144,10 @@ class VirtualBoxState(MachineState):
         nic_info=namedtuple("nic_info", ["index", "type", "name"])
         if network_types is None: network_types = [ "hostonly" ]
         for k, v in vminfo.iteritems():
-            v = v.lower()
-            if k.startswith("nic") and v in network_types:
-                i = int(k[len("nic"):]) - (1 - start)
+            ki = re.search(r"^nic(\d+)$", k)
+            v  = v.lower()
+            if ki and v in network_types:
+                i = int(ki.group(1)) - (1 - start)
                 yield nic_info(i, v, vminfo.get(to_adaptor(v).format(i)))
 
     def _get_nic_flags(self, networks):

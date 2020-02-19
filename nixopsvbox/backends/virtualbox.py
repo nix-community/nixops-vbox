@@ -183,24 +183,6 @@ class VirtualBoxState(MachineState):
 
         self.state = self.STARTING
 
-    def _update_ip(self):
-
-        res = self._logged_exec(
-            ["VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(next(self._get_nic_info(start=0)).index)],
-            capture_stdout=True).rstrip()
-        if res[0:7] != "Value: ": return
-        new_address = res[7:]
-
-        self.private_ipv4 = None
-        try:
-            if ipaddress.ip_address(unicode(new_address)).is_link_local:
-                raise Exception("cannot use link-local address as private IPv4 address")
-
-            nixops.known_hosts.update(self.private_ipv4, new_address, self.public_host_key)
-            self.private_ipv4 = new_address
-        except:
-            self.warn("cannot use {} as private IPv4 address for machine connection".format(new_address))
-
     def _update_disk(self, name, state):
         disks = self.disks
         if state == None:
@@ -217,16 +199,47 @@ class VirtualBoxState(MachineState):
             shared_folders[name] = state
         self.shared_folders = shared_folders
 
+    def _update_ip(self, can_fail=False):
+        # checkme: It might be too strong to enforce the consistency if we clear the old value.
+        # nixops.known_hosts.update(self.private_ipv4, None, self.public_host_key)
+        # self.private_ipv4 = None
+
+        new_address = re.search(r"^Value: *([0-9.]+) *$", self._logged_exec([
+            "VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(next(self._get_nic_info(start=0)).index)
+        ], capture_stdout=True).rstrip())
+
+        try:
+            if not new_address:
+                if self.state == self.STARTING:
+                    return False
+                raise UserWarning("retrieve")
+
+            if ipaddress.ip_address(unicode(new_address)).is_link_local:
+                raise UserWarning("use link-local address {} as".format(new_address))
+
+            nixops.known_hosts.update(self.private_ipv4, new_address, self.public_host_key)
+            self.private_ipv4 = new_address
+            return True
+        except UserWarning as w:
+            msg = "cannot {} private IP. You may want to check VirtualBox network configurations and run ‘nixops deploy’ again".format(w)
+
+            if not can_fail:
+                raise UserWarning(msg)
+
+            self.warn(msg)
+            return False
 
     def _wait_for_ip(self):
         self.log_start("waiting for IP address...")
-        while True:
-            self._update_ip()
-            if self.private_ipv4: break
-            time.sleep(1)
-            self.log_continue(".")
-        self.log_end(" " + self.private_ipv4)
-
+        try:
+            while not self._update_ip():
+                time.sleep(1)
+                self.log_continue(".")
+        except Exception as e:
+            self.state = self.UNREACHABLE
+            self.warn(e)
+        else:
+            self.log_end(" " + self.private_ipv4)
 
     def create_after(self, resources, defn):
         return {r for r in resources if isinstance(r, nixopsvbox.resources.virtualbox_network.VirtualBoxNetworkState)}
@@ -436,8 +449,7 @@ class VirtualBoxState(MachineState):
                 ["VBoxManage", "modifyvm", self.vm_id] + modifyvm_args)
 
             self.networks = networks
-            # Force update the private ip if networks has changed
-            if network_changed:
+            if network_changed: # Force retrieving the private ip
                 self.private_ipv4 = None
 
             self._headless = defn.config["virtualbox"]["headless"]
@@ -546,8 +558,10 @@ class VirtualBoxState(MachineState):
             self.state = self.STOPPED
         elif state == "running":
             res.is_up = True
-            self._update_ip()
-            MachineState._check(self, res)
+            if self._update_ip(can_fail=True):
+                MachineState._check(self, res)
+            else:
+                self.state = self.UNREACHABLE
         else:
             self.state = self.UNKNOWN
 

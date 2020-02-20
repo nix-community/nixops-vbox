@@ -423,9 +423,11 @@ class VirtualBoxState(MachineState):
 
 
         # Update VM settings such as cpus, memory, networks, etc.
-        network_changed = allow_reboot if self.networks != defn.config["virtualbox"]["networks"] else False
+        network_changed = self.networks != defn.config["virtualbox"]["networks"]
+        if network_changed and not allow_reboot:
+            self.warn("change of the networks requires reboot; skipping")
 
-        if any([self.stopped, network_changed]):
+        if any([self.stopped, network_changed and allow_reboot]):
             if allow_reboot and not self.stopped: self.stop()
 
             modifyvm_args = [

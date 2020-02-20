@@ -161,6 +161,7 @@ class VirtualBoxState(MachineState):
             elif type == "natnetwork" : return "--nat-network{}"
             elif type == "generic"    : return "--nicgenericdrv{}"
             elif type == "nat"        : return ""
+            elif type == "none"       : return ""
             else:
                 raise Exception("unknown NIC type is specified on VirtualBox VM ‘{0}’".format(self.name))
 
@@ -442,7 +443,7 @@ class VirtualBoxState(MachineState):
                 modifyvm_args.extend(["--cpus", str(vcpus)])
 
             networks = defn.config["virtualbox"]["networks"]
-            for nics in self._get_nic_flags(networks):
+            for nics in self._get_nic_flags(networks + [ { "type": "none" } ] * (len(self.networks) - len(networks))):
                 modifyvm_args.extend(nics)
 
             # Include arbitrary additional arguments

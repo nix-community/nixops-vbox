@@ -114,7 +114,7 @@ in
                              };
                              type = mkOption {
                                  description = "The type of the network";
-                                 type = enum [ "nat" "natnetwork" "bridged" "hostonly" "intnet" "generic" ];
+                                 type = enum [ "none" "nat" "natnetwork" "bridged" "hostonly" "intnet" "generic" ];
                              };
                          };
                        })

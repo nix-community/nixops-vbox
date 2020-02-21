@@ -105,20 +105,23 @@ in
           Note: NixOps requires at least one Host-only network to access the instance for management purposes,
           When multiple Host-only networks exist, the first one in the list will be used for machine connection.
         '';
-        type = with types; listOf (either (resource "vbox-network")
-            (submodule { options = {
-                             name = mkOption {
-                                 default = "";
-                                 description = "The name of the network not managed by NixOps";
-                                 type = str;
-                             };
-                             type = mkOption {
-                                 description = "The type of the network";
-                                 type = enum [ "none" "nat" "natnetwork" "bridged" "hostonly" "intnet" "generic" ];
-                             };
-                         };
-                       })
-        );
+        type = with types; addCheck (nonEmptyListOf
+            (either
+                (resource "vbox-network")
+                (submodule {
+                    options = {
+                        name = mkOption {
+                            default = "";
+                            description = "The name of the network not managed by NixOps";
+                            type = str;
+                        };
+                        type = mkOption {
+                            description = "The type of the network";
+                            type = enum [ "none" "nat" "natnetwork" "bridged" "hostonly" "intnet" "generic" ];
+                        };
+                    };
+                })
+            )) (l: any (n: n.type == "hostonly") l);
     };
 
     deployment.virtualbox.sharedFolders = mkOption {

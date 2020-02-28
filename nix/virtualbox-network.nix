@@ -50,6 +50,6 @@ rec {
     };
 
     config = {
-        _type = "vbox-network";
+        _type = "virtualbox-network";
     };
 }

@@ -15,11 +15,11 @@ class VirtualBoxNetworkDefinition(ResourceDefinition):
 
     @classmethod
     def get_type(cls):
-        return "vbox-network"
+        return "virtualbox-network"
 
     @classmethod
     def get_resource_type(cls):
-        return "vboxNetworks"
+        return "virtualboxNetworks"
 
     def __init__(self, xml):
         ResourceDefinition.__init__(self, xml)
@@ -44,7 +44,7 @@ class VirtualBoxNetworkState(ResourceState):
 
     @classmethod
     def get_type(cls):
-        return "vbox-network"
+        return "virtualbox-network"
 
     def __init__(self, depl, name, id):
         ResourceState.__init__(self, depl, name, id)
@@ -63,7 +63,7 @@ class VirtualBoxNetworkState(ResourceState):
     def public_ipv4(self):
         return self.network_cidr if self.state == self.UP else None;
 
-    nix_name = "vboxNetworks"
+    nix_name = "virtualboxNetworks"
 
     @property
     def full_name(self):

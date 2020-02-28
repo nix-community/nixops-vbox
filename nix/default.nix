@@ -17,6 +17,6 @@
     ./virtualbox.nix
   ];
   resources = { evalResources, zipAttrs, resourcesByType, ...}: {
-    vboxNetworks = evalResources ./virtualbox-network.nix (zipAttrs resourcesByType.vboxNetworks or []);
+    virtualboxNetworks = evalResources ./virtualbox-network.nix (zipAttrs resourcesByType.virtualboxNetworks or []);
   };
 }

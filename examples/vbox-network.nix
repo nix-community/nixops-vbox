@@ -4,12 +4,12 @@ let
     };
 in
 {
-    resources.vboxNetworks.net1 = {
+    resources.virtualboxNetworks.net1 = {
         type = "natnetwork";
         cidrBlock = "192.168.100.0/24";
     };
 
-    resources.vboxNetworks.net2 = { resources, ... }: {
+    resources.virtualboxNetworks.net2 = { resources, ... }: {
         type = "hostonly";
         cidrBlock = "192.168.101.0/24";
         staticIPs = [
@@ -25,8 +25,8 @@ in
         deployment.virtualbox.headless = true;
         deployment.virtualbox.networks = [
             { "type" = "nat"; }
-            resources.vboxNetworks.net1
-            resources.vboxNetworks.net2
+            resources.virtualboxNetworks.net1
+            resources.virtualboxNetworks.net2
         ];
     };
 
@@ -34,8 +34,8 @@ in
         deployment.targetEnv = "virtualbox";
         deployment.virtualbox.headless = true;
         deployment.virtualbox.networks = [
-            resources.vboxNetworks.net2
-            resources.vboxNetworks.net1
+            resources.virtualboxNetworks.net2
+            resources.virtualboxNetworks.net1
         ];
     };
 

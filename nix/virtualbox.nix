@@ -96,7 +96,7 @@ in
         default = [ { type = "nat"; } { type = "hostonly"; name = "vboxnet0"; } ];
         description = ''
           The list of networks to which the instance is attached. The network can be either
-          a vbox-network resource or a network not managed by NixOps.
+          a virtualbox-network resource or a network not managed by NixOps.
 
           For the sake of backward compatibility, the default list contains the following networks:
            - NAT
@@ -107,7 +107,7 @@ in
         '';
         type = with types; addCheck (nonEmptyListOf
             (either
-                (resource "vbox-network")
+                (resource "virtualbox-network")
                 (submodule {
                     options = {
                         name = mkOption {

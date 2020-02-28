@@ -26,8 +26,14 @@ class VirtualBoxNetworkDefinition(ResourceDefinition):
         self.network_type = xml.find("attrs/attr[@name='type']/string").get("value")
         self.network_cidr = xml.find("attrs/attr[@name='cidrBlock']/string").get("value")
 
-        self.static_ips = { x.find("attr[@name='machine']/string").get("value"):
-                            x.find("attr[@name='address']/string").get("value") for x in xml.findall("attrs/attr[@name='staticIPs']/list/attrs") }
+        self.static_ips = {
+            x.find("attr[@name='machine']/string").get("value"): x.find("attr[@name='address']/string").get("value")
+            for x in xml.findall("attrs/attr[@name='staticIPs']/list/attrs")
+        }
+        self.static_ips.update({
+            x.find("string").get("value"): x.get("name")
+            for x in xml.findall("attrs/attr[@name='staticIPs']/attrs/attr")
+        })
 
     def show_type(self):
         return "{0} [{1:8} {2}]".format(self.get_type(), self.network_type, self.network_cidr)

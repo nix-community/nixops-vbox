@@ -3,6 +3,9 @@
 with lib;
 with import <nixops/lib.nix> lib;
 
+let
+    toMachineName = m: if builtins.isString m then m else m._name;
+in
 rec {
     options = {
         type = mkOption {
@@ -27,15 +30,25 @@ rec {
         };
 
         staticIPs = mkOption {
+            example = ''
+              # As an attrset
+              {
+                "192.168.56.10" = "node1";
+                "192.168.56.11" = "node2";
+                ...
+              }
+              # Or as a list
+              [
+                { address = "192.168.56.10"; machine = "node1"; }
+                { address = "192.168.56.11"; machine = "node2"; }
+                ...
+              ]
+            '';
             default = [];
             description = "The list of machine to IPv4 address bindings for fixing IP address of the machine in the network";
-            type = with types; listOf (submodule {
+            apply = a: if builtins.isAttrs a then mapAttrs (k: toMachineName) a else a;
+            type = with types; either attrs (listOf (submodule {
                 options = {
-                    machine = mkOption {
-                        type = either str (resource "machine");
-                        apply = x: if builtins.isString x then x else x._name;
-                        description = "The name of the machine in the network";
-                    };
                     address = mkOption {
                         example = "192.168.56.3";
                         type = str;
@@ -44,8 +57,13 @@ rec {
                           The static IP must be a non-reserved IP address.
                         '';
                     };
+                    machine = mkOption {
+                        type = either str (resource "machine");
+                        apply = toMachineName;
+                        description = "The name of the machine in the network";
+                    };
                 };
-            });
+            }));
         };
     };
 

@@ -4,9 +4,13 @@ let
     };
 in
 {
-    resources.virtualboxNetworks.net1 = {
+    resources.virtualboxNetworks.net1 = { resources, ... }: {
         type = "natnetwork";
         cidrBlock = "192.168.100.0/24";
+        staticIPs = {
+            "192.168.100.11" = resources.machines.node1;
+            "192.168.100.12" = "node2";
+        };
     };
 
     resources.virtualboxNetworks.net2 = { resources, ... }: {

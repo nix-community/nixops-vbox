@@ -16,5 +16,6 @@ def nixexprs():
 @nixops.plugins.hookimpl
 def load():
     return [
+        "nixopsvbox.resources",
         "nixopsvbox.backends.virtualbox",
     ]

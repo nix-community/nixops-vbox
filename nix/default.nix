@@ -16,5 +16,7 @@
   options = [
     ./virtualbox.nix
   ];
-  resources = { ... }: {};
+  resources = { evalResources, zipAttrs, resourcesByType, ...}: {
+    virtualboxNetworks = evalResources ./virtualbox-network.nix (zipAttrs resourcesByType.virtualboxNetworks or []);
+  };
 }

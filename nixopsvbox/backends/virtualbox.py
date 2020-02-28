@@ -5,9 +5,13 @@ import sys
 import time
 import shutil
 import stat
+import re
+import ipaddress
+from collections import defaultdict, namedtuple
 from nixops.backends import MachineDefinition, MachineState
 from nixops.nix_expr import RawValue
 import nixops.known_hosts
+import nixopsvbox.resources.virtualbox_network
 from distutils import spawn
 
 sata_ports = 8
@@ -41,6 +45,7 @@ class VirtualBoxState(MachineState):
     public_host_key = nixops.util.attr_property("virtualbox.publicHostKey", None)
     private_host_key = nixops.util.attr_property("virtualbox.privateHostKey", None)
     shared_folders = nixops.util.attr_property("virtualbox.sharedFolders", {}, 'json')
+    networks = nixops.util.attr_property("virtualbox.networks", [], 'json')
 
     # Obsolete.
     disk = nixops.util.attr_property("virtualbox.disk", None)
@@ -49,10 +54,15 @@ class VirtualBoxState(MachineState):
     def __init__(self, depl, name, id):
         MachineState.__init__(self, depl, name, id)
         self._disk_attached = False
+        self._hooks = defaultdict(list)
 
     @property
     def resource_id(self):
         return self.vm_id
+
+    @property
+    def stopped(self):
+        return self.state in [ self.MISSING, self.STOPPED ]
 
     def get_ssh_name(self):
         assert self.private_ipv4
@@ -67,7 +77,6 @@ class VirtualBoxState(MachineState):
 
     def get_physical_spec(self):
         return {'imports': [RawValue('<virtualbox-image-nixops.nix>')]}
-
 
     def address_to(self, m):
         if isinstance(m, VirtualBoxState):
@@ -121,10 +130,51 @@ class VirtualBoxState(MachineState):
             raise Exception("unable to get state of VirtualBox VM ‘{0}’".format(self.name))
         return vminfo['VMState'].replace('"', '')
 
+    def _get_nic_info(self, network_types=None, start=1, can_fail=False):
+        def to_adaptor(type):
+            if   type == "bridged"    : return "bridgeadapter{}"
+            elif type == "hostonly"   : return "hostonlyadapter{}"
+            elif type == "intnet"     : return "intnet{}"
+            elif type == "natnetwork" : return "nat-network{}"
+            elif type == "generic"    : return "generic{}"
+            elif type == "nat"        : return "natnet{}"
+            else:
+                raise Exception("unknown NIC type is specified on VirtualBox VM ‘{0}’".format(self.name))
+
+        vminfo = self._get_vm_info(can_fail)
+        if not vminfo: return
+
+        nic_info=namedtuple("nic_info", ["index", "type", "name"])
+        if network_types is None: network_types = [ "hostonly" ]
+        for k, v in vminfo.iteritems():
+            ki = re.search(r"^nic(\d+)$", k)
+            v  = v.lower()
+            if ki and v in network_types:
+                i = int(ki.group(1)) - (1 - start)
+                yield nic_info(i, v, vminfo.get(to_adaptor(v).format(i)))
+
+    def _get_nic_flags(self, networks):
+        def to_adaptor(type):
+            if   type == "bridged"    : return "--bridgeadapter{}"
+            elif type == "hostonly"   : return "--hostonlyadapter{}"
+            elif type == "intnet"     : return "--intnet{}"
+            elif type == "natnetwork" : return "--nat-network{}"
+            elif type == "generic"    : return "--nicgenericdrv{}"
+            elif type == "nat"        : return ""
+            elif type == "none"       : return ""
+            else:
+                raise Exception("unknown NIC type is specified on VirtualBox VM ‘{0}’".format(self.name))
+
+        return (filter (None, [
+            "--nic{0}".format(i)     , net.get("type"),
+            "--nictype{0}".format(i) , "virtio",
+            to_adaptor(net.get("type")).format(i),
+            self.depl.resources[net.get("_name")].network_name if net.get("_name") else net.get("name", "")
+        ]) for i, net in enumerate(networks, start=1))
 
     def _start(self):
         self._logged_exec(
-            ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Net/1/V4/IP", ''])
+            ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(next(self._get_nic_info(start=0)).index), ''])
 
         self._logged_exec(
             ["VBoxManage", "guestproperty", "set", self.vm_id, "/VirtualBox/GuestInfo/Charon/ClientPublicKey", self._client_public_key])
@@ -134,17 +184,6 @@ class VirtualBoxState(MachineState):
 
         self.state = self.STARTING
 
-
-    def _update_ip(self):
-        res = self._logged_exec(
-            ["VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/1/V4/IP"],
-            capture_stdout=True).rstrip()
-        if res[0:7] != "Value: ": return
-        new_address = res[7:]
-        nixops.known_hosts.update(self.private_ipv4, new_address, self.public_host_key)
-        self.private_ipv4 = new_address
-
-
     def _update_disk(self, name, state):
         disks = self.disks
         if state == None:
@@ -152,7 +191,6 @@ class VirtualBoxState(MachineState):
         else:
             disks[name] = state
         self.disks = disks
-
 
     def _update_shared_folder(self, name, state):
         shared_folders = self.shared_folders
@@ -162,16 +200,51 @@ class VirtualBoxState(MachineState):
             shared_folders[name] = state
         self.shared_folders = shared_folders
 
+    def _update_ip(self, can_fail=False):
+        # checkme: It might be too strong to enforce the consistency if we clear the old value.
+        # nixops.known_hosts.update(self.private_ipv4, None, self.public_host_key)
+        # self.private_ipv4 = None
+        try:
+            got_address = re.search(r"^Value: *([0-9.]+) *$", self._logged_exec([
+                "VBoxManage", "guestproperty", "get", self.vm_id, "/VirtualBox/GuestInfo/Net/{}/V4/IP".format(next(self._get_nic_info(start=0)).index)
+            ], capture_stdout=True).rstrip())
+
+            if not got_address:
+                if self.state == self.STARTING:
+                    return False
+                raise UserWarning("retrieve")
+
+            new_address = got_address.group(1)
+
+            if ipaddress.ip_address(unicode(new_address)).is_link_local:
+                raise UserWarning("use link-local address {} as".format(new_address))
+
+            nixops.known_hosts.update(self.private_ipv4, new_address, self.public_host_key)
+            self.private_ipv4 = new_address
+            return True
+        except UserWarning as w:
+            msg = "cannot {} private IP. You may want to check VirtualBox network configurations and run ‘nixops deploy’ again".format(w)
+
+            if not can_fail:
+                raise UserWarning(msg)
+
+            self.warn(msg)
+            return False
 
     def _wait_for_ip(self):
         self.log_start("waiting for IP address...")
-        while True:
-            self._update_ip()
-            if self.private_ipv4 != None: break
-            time.sleep(1)
-            self.log_continue(".")
-        self.log_end(" " + self.private_ipv4)
+        try:
+            while not self._update_ip():
+                time.sleep(1)
+                self.log_continue(".")
+        except Exception as e:
+            self.state = self.UNREACHABLE
+            self.warn(e.message)
+        else:
+            self.log_end(" " + self.private_ipv4)
 
+    def create_after(self, resources, defn):
+        return {r for r in resources if isinstance(r, nixopsvbox.resources.virtualbox_network.VirtualBoxNetworkState)}
 
     def create(self, defn, check, allow_reboot, allow_recreate):
         assert isinstance(defn, VirtualBoxDefinition)
@@ -190,6 +263,9 @@ class VirtualBoxState(MachineState):
             self._logged_exec(["VBoxManage", "createvm", "--name", vm_id, "--ostype", "Linux26_64", "--register"])
             self.vm_id = vm_id
             self.state = self.STOPPED
+
+        for set_static_ip, machine, address, i in self._hooks.get("set_static_ip_after_createvm", []):
+            set_static_ip(machine, address, self.vm_id, i)
 
         # Generate a public/private host key.
         if not self.public_host_key:
@@ -346,31 +422,45 @@ class VirtualBoxState(MachineState):
         if not self._client_private_key:
             (self._client_private_key, self._client_public_key) = nixops.util.create_key_pair()
 
-        if not self.started:
+
+        # Update VM settings such as cpus, memory, networks, etc.
+        network_changed = self.networks != defn.config["virtualbox"]["networks"]
+        if network_changed and not allow_reboot and self.networks:
+            self.warn("change of the networks requires reboot; skipping")
+
+        if any([self.stopped, network_changed and allow_reboot]):
+            if allow_reboot and not self.stopped: self.stop()
+
             modifyvm_args = [
-                 "--memory", str(defn.config["virtualbox"]["memorySize"]),
-                 "--vram", "10",
-                 "--nictype1", "virtio",
-                 "--nictype2", "virtio",
-                 "--nic2", "hostonly",
-                 "--hostonlyadapter2", "vboxnet0",
-                 "--nestedpaging", "off",
-                 "--paravirtprovider", "kvm"
+                "--memory", str(defn.config["virtualbox"]["memorySize"]),
+                "--vram", "10",
+                "--nestedpaging", "off",
+                "--paravirtprovider", "kvm"
             ]
+
             vcpus = defn.config["virtualbox"]["vcpu"]  # None or integer
             if vcpus is not None:
                 modifyvm_args.extend(["--cpus", str(vcpus)])
+
+            networks = defn.config["virtualbox"]["networks"]
+            for nics in self._get_nic_flags(networks + [ { "type": "none" } ] * (len(self.networks) - len(networks))):
+                modifyvm_args.extend(nics)
+
             # Include arbitrary additional arguments
             modifyvm_args.extend(defn.config["virtualbox"]["vmFlags"])
+
             self._logged_exec(
                 ["VBoxManage", "modifyvm", self.vm_id] + modifyvm_args)
+
+            self.networks = networks
+            if network_changed: # Force retrieving the private ip
+                self.private_ipv4 = None
 
             self._headless = defn.config["virtualbox"]["headless"]
             self._start()
 
         if not self.private_ipv4 or check:
             self._wait_for_ip()
-
 
     def destroy(self, wipe=False):
         if not self.vm_id: return True
@@ -406,19 +496,26 @@ class VirtualBoxState(MachineState):
         state = self._get_vm_state()
 
         if state not in ['poweroff', 'aborted']:
+            self.check() # Update state so that a proper shutdown is executed
 
             self.log_start("shutting down... ")
 
-            self.run_command("systemctl poweroff", check=False)
+            if self.state == self.UP:
+                self.run_command("systemctl poweroff", check=False)
+            else:
+                self._logged_exec(["VBoxManage", "controlvm", self.vm_id, "acpipowerbutton"], check=False)
+
             self.state = self.STOPPING
 
             while True:
-                state = self._get_vm_state()
+                state = self._get_vm_state(can_fail=True)
                 self.log_continue("[{0}] ".format(state))
                 if state == 'poweroff': break
                 time.sleep(1)
 
                 self.log_end("")
+
+        time.sleep(1) # hack to work around "machine locked" errors
 
         self.state = self.STOPPED
         self.ssh_master = None
@@ -439,8 +536,8 @@ class VirtualBoxState(MachineState):
         if prev_ipv4 != self.private_ipv4:
             self.warn("IP address has changed, you may need to run ‘nixops deploy’")
 
-        self.wait_for_ssh(check=True)
-
+        if self.state != self.UNREACHABLE:
+            self.wait_for_ssh(check=True)
 
     def _check(self, res):
         if not self.vm_id:
@@ -466,7 +563,12 @@ class VirtualBoxState(MachineState):
             self.state = self.STOPPED
         elif state == "running":
             res.is_up = True
-            self._update_ip()
-            MachineState._check(self, res)
+            if self._update_ip(can_fail=True):
+                MachineState._check(self, res)
+            else:
+                self.state = self.UNREACHABLE
         else:
             self.state = self.UNKNOWN
+
+    def add_hook(self, k, handler):
+        self._hooks[k].append(handler)

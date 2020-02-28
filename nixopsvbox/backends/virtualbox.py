@@ -264,8 +264,8 @@ class VirtualBoxState(MachineState):
             self.vm_id = vm_id
             self.state = self.STOPPED
 
-        for hook in self._hooks.get("after_createvm", []):
-            hook()
+        for set_static_ip, machine, address, i in self._hooks.get("set_static_ip_after_createvm", []):
+            set_static_ip(machine, address, self.vm_id, i)
 
         # Generate a public/private host key.
         if not self.public_host_key:

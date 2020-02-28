@@ -189,27 +189,30 @@ class VirtualBoxNetwork(object):
             "--enable"
         ], self.logger)
 
+        def set_static_ip(machine, address, vm_id, nic_num):
+            try:
+                if ipaddress.ip_address(unicode(address)) not in subnet:
+                    raise Exception("cannot assign a static IP out of the network CIDR")
+                logged_exec([
+                    "VBoxManage", "dhcpserver", "modify",
+                    "--netname" , self._name,
+                    "--vm"      , vm_id,
+                    "--nic"     , str(nic_num),
+                    "--fixed-address", address
+                ], self.logger)
+            except:
+                state.warn("cannot assign static IP '{0}' to machine '{1}' in subnet '{2}'".format(address, machine, defn.network_cidr))
+
         for machine, address in defn.static_ips.iteritems():
             mstate = state.depl.resources.get(machine)
             mdefn  = state.depl.definitions.get(machine)
             if isinstance(mstate, VirtualBoxState) and isinstance(mdefn, VirtualBoxDefinition):
                 for i, net in enumerate(mdefn.config["virtualbox"]["networks"], start=1):
                     if net.get("_name") == defn.name and net.get("type") == defn.network_type:
-                        def set_static_ip():
-                            try:
-                                if ipaddress.ip_address(unicode(address)) not in subnet:
-                                    raise Exception("cannot assign a static IP out of the network CIDR")
-                                logged_exec([
-                                    "VBoxManage", "dhcpserver", "modify",
-                                    "--netname" , self._name,
-                                    "--vm"      , mstate.vm_id,
-                                    "--nic"     , str(i),
-                                    "--fixed-address", address
-                                ], self.logger)
-                            except:
-                                state.warn("cannot assign static IP '{0}' to machine '{1}' in subnet '{2}'".format(address, machine, defn.network_cidr))
-
-                        set_static_ip() if mstate.vm_id else mstate.add_hook("after_createvm", set_static_ip)
+                        if mstate.vm_id:
+                            set_static_ip(machine, address, mstate.vm_id, i)
+                        else:
+                            mstate.add_hook("set_static_ip_after_createvm", (set_static_ip, machine, address, i))
 
                         break;
                 else:

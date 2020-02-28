@@ -496,13 +496,14 @@ class VirtualBoxState(MachineState):
         state = self._get_vm_state()
 
         if state not in ['poweroff', 'aborted']:
+            self.check() # Update state so that a proper shutdown is executed
 
             self.log_start("shutting down... ")
 
             if self.state == self.UP:
                 self.run_command("systemctl poweroff", check=False)
             else:
-                self._logged_exec(["VBoxManage", "controlvm", self.vm_id, "poweroff"], check=False)
+                self._logged_exec(["VBoxManage", "controlvm", self.vm_id, "acpipowerbutton"], check=False)
 
             self.state = self.STOPPING
 

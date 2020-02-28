@@ -91,7 +91,7 @@ class VirtualBoxNetworkState(ResourceState):
             return
 
         self.log("updating {}...".format(self.full_name))
-        if self._can_update(defn, allow_reboot, allow_recreate):
+        if self._need_update(defn, allow_reboot, allow_recreate):
             with self._lock:
                 self.network_cidr = defn.network_cidr
                 self.static_ips   = defn.static_ips
@@ -99,7 +99,10 @@ class VirtualBoxNetworkState(ResourceState):
                 self.state = self.UP
             return
 
-    def _can_update(self, defn, allow_reboot, allow_recreate):
+    def _need_update(self, defn, allow_reboot, allow_recreate):
+        if self.network_cidr == defn.network_cidr and self.static_ips == defn.static_ips and self.network_type == defn.network_type: # no changes
+            return False
+
         if self.network_type != defn.network_type:
             self.warn("change of the network type from {0} to {1} is not supported; skipping".format(self.network_type, defn.network_type))
             return False
@@ -126,16 +129,6 @@ class VirtualBoxNetworkState(ResourceState):
             VirtualBoxNetworks[self.network_type](self.network_name).destroy()
 
         return True
-
-
-    # def _is_attached(self):
-    #     for m in self.depl.resources.values if isintance(m, VirtualBoxState):
-    #         if m.
-
-    #     if isinstance(mstate, VirtualBoxState) and isinstance(mdefn, VirtualBoxDefinition):
-    #         k    = "{_name}:{network_type}".format(**self.__dict__)
-    #         nics = mstate.parse_nic_spec(mdefn)
-    #         if nics.has(k)
 
     def _check(self):
         if self.network_type and self.network_name in VirtualBoxNetworks[self.network_type].findall():
@@ -287,7 +280,6 @@ class VirtualBoxNatNetwork(VirtualBoxNetwork):
     def update(self, state, defn):
         logged_exec(["VBoxManage", "natnetwork", "modify", "--netname", self._name, "--network", defn.network_cidr, "--enable", "--dhcp", "on"], self.logger)
         self.setup_dhcp_server(state, defn)
-        #logged_exec(["VBoxManage", "natnetwork", "start" , "--netname", self._name], self.logger, check=False)
         return self
 
     def destroy(self):

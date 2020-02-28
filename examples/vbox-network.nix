@@ -1,8 +1,3 @@
-let
-    config = {
-
-    };
-in
 {
     resources.virtualboxNetworks.net1 = { resources, ... }: {
         type = "natnetwork";

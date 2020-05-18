@@ -14,7 +14,7 @@ mypy = "^0.770"
 flake8 = "^3.8.1"
 
 [tool.poetry.plugins."nixops"]
-aws = "nixopsvbox.plugin:load"
+vbox = "nixopsvbox.plugin:load"
 
 [build-system]
 requires = ["poetry>=0.12"]

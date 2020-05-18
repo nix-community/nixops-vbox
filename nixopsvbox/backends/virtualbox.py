@@ -6,13 +6,41 @@ import shutil
 from nixops.backends import MachineDefinition, MachineState
 from nixops.nix_expr import RawValue
 import nixops.known_hosts
+from typing import Any, Sequence, Optional, Mapping
+from nixops.state import StateDict, RecordId
 
 
 SATA_PORTS = 8
 
 
+class SharedFoldersOptions(nixops.resources.ResourceOptions):
+    hostPath: str
+    readOnly: bool
+
+
+class DiskOptions(nixops.resources.ResourceOptions):
+    port: int
+    size: int
+    baseImage: Optional[str]
+
+
+class VirtualBoxVboxOptions(nixops.resources.ResourceOptions):
+    sharedFolders: Mapping[str, SharedFoldersOptions]
+    disks: Mapping[str, DiskOptions]
+    memorySize: int
+    vcpu: Optional[int]
+    vmFlags: Sequence[str]
+    headless: bool
+
+
+class VirtualBoxOptions(nixops.backends.MachineOptions):
+    virtualbox: VirtualBoxVboxOptions
+
+
 class VirtualBoxDefinition(MachineDefinition):
     """Definition of a VirtualBox machine."""
+
+    config: VirtualBoxOptions
 
     @classmethod
     def get_type(cls):
@@ -46,7 +74,7 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
     disk = nixops.util.attr_property("virtualbox.disk", None)
     disk_attached = nixops.util.attr_property("virtualbox.diskAttached", False, bool)
 
-    def __init__(self, depl, name, id):
+    def __init__(self, depl: nixops.deployment.Deployment, name: str, id: RecordId):
         super().__init__(depl, name, id)
         self._disk_attached = False
 
@@ -206,7 +234,9 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
             self.log_continue(".")
         self.log_end(" " + self.private_ipv4)
 
-    def create(self, defn: VirtualBoxDefinition, check, allow_reboot, allow_recreate):  # noqa: C901
+    def create(
+        self, defn: VirtualBoxDefinition, check, allow_reboot, allow_recreate
+    ):  # noqa: C901
         if self.state != self.UP or check:
             self.check()
 
@@ -301,8 +331,8 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
 
             if not sf_state.get("added", False):
                 self.log("adding shared folder ‘{0}’...".format(sf_name))
-                host_path = sf_def.get("hostPath")
-                read_only = sf_def.get("readOnly")
+                host_path = sf_def.hostPath
+                read_only = sf_def.readOnly
 
                 vbox_opts = [
                     "VBoxManage",
@@ -357,7 +387,7 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
 
                 disk_path = "{0}/{1}.vdi".format(vm_dir, disk_name)
 
-                base_image = disk_def.get("baseImage")
+                base_image = disk_def.baseImage
                 if base_image:
                     # Clone an existing disk image.
                     if base_image == "drv":
@@ -390,19 +420,19 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
                             "VDI",
                         ]
                     )
-                    if disk_def["size"] != 0:
+                    if disk_def.size != 0:
                         self._logged_exec(
                             [
                                 "VBoxManage",
                                 "modifyhd",
                                 disk_path,
                                 "--resize",
-                                str(disk_def["size"]),
+                                str(disk_def.size),
                             ]
                         )
                 else:
                     # Create an empty disk.
-                    if disk_def["size"] <= 0:
+                    if disk_def.size <= 0:
                         raise Exception(
                             "size of VirtualBox disk ‘{0}’ must be positive".format(
                                 disk_name
@@ -415,10 +445,10 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
                             "--filename",
                             disk_path,
                             "--size",
-                            str(disk_def["size"]),
+                            str(disk_def.size),
                         ]
                     )
-                    disk_state["size"] = disk_def["size"]
+                    disk_state["size"] = disk_def.size
 
                 disk_state["created"] = True
                 disk_state["path"] = disk_path
@@ -427,10 +457,10 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
             if not disk_state.get("attached", False):
                 self.log("attaching disk ‘{0}’...".format(disk_name))
 
-                if disk_def["port"] >= SATA_PORTS:
+                if disk_def.port >= SATA_PORTS:
                     raise Exception(
                         "SATA port number {0} of disk ‘{1}’ exceeds maximum ({2})".format(
-                            disk_def["port"], disk_name, SATA_PORTS
+                            disk_def.port, disk_name, SATA_PORTS
                         )
                     )
 
@@ -438,7 +468,7 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
                     if (
                         disk_name != disk_name2
                         and disk_state2.get("attached", False)
-                        and disk_state2["port"] == disk_def["port"]
+                        and disk_state2["port"] == disk_def.port
                     ):
                         raise Exception(
                             "cannot attach disks ‘{0}’ and ‘{1}’ to the same SATA port on VirtualBox machine ‘{2}’".format(
@@ -454,7 +484,7 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
                         "--storagectl",
                         "SATA",
                         "--port",
-                        str(disk_def["port"]),
+                        str(disk_def.port),
                         "--device",
                         "0",
                         "--type",
@@ -464,7 +494,7 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
                     ]
                 )
                 disk_state["attached"] = True
-                disk_state["port"] = disk_def["port"]
+                disk_state["port"] = disk_def.port
                 self._update_disk(disk_name, disk_state)
 
         # FIXME: warn about changed disk attributes (like size).  Or

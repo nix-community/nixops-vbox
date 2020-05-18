@@ -22,7 +22,7 @@ class VirtualBoxDefinition(MachineDefinition):
         super().__init__(name, config)
 
 
-class VirtualBoxState(MachineState):
+class VirtualBoxState(MachineState[VirtualBoxDefinition]):
     """State of a VirtualBox machine."""
 
     @classmethod
@@ -206,9 +206,7 @@ class VirtualBoxState(MachineState):
             self.log_continue(".")
         self.log_end(" " + self.private_ipv4)
 
-    def create(self, defn, check, allow_reboot, allow_recreate):  # noqa: C901
-        assert isinstance(defn, VirtualBoxDefinition)
-
+    def create(self, defn: VirtualBoxDefinition, check, allow_reboot, allow_recreate):  # noqa: C901
         if self.state != self.UP or check:
             self.check()
 

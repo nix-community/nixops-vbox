@@ -298,7 +298,7 @@ class VirtualBoxState(MachineState):
             )
 
         # Create missing shared folders
-        for sf_name, sf_def in list(defn.config["virtualbox"]["sharedFolders"].items()):
+        for sf_name, sf_def in defn.config.virtualbox.sharedFolders.items():
             sf_state = self.shared_folders.get(sf_name, {})
 
             if not sf_state.get("added", False):
@@ -327,7 +327,7 @@ class VirtualBoxState(MachineState):
 
         # Remove obsolete shared folders
         for sf_name, sf_state in list(self.shared_folders.items()):
-            if sf_name not in defn.config["virtualbox"]["sharedFolders"]:
+            if sf_name not in defn.config.virtualbox.sharedFolders:
                 if not self.started:
                     self.log("removing shared folder ‘{0}’".format(sf_name))
 
@@ -351,7 +351,7 @@ class VirtualBoxState(MachineState):
                     )
 
         # Create missing disks.
-        for disk_name, disk_def in list(defn.config["virtualbox"]["disks"].items()):
+        for disk_name, disk_def in defn.config.virtualbox.disks.items():
             disk_state = self.disks.get(disk_name, {})
 
             if not disk_state.get("created", False):
@@ -474,7 +474,7 @@ class VirtualBoxState(MachineState):
 
         # Destroy obsolete disks.
         for disk_name, disk_state in list(self.disks.items()):
-            if disk_name not in defn.config["virtualbox"]["disks"]:
+            if disk_name not in defn.config.virtualbox.disks:
                 if not self.depl.logger.confirm(
                     "are you sure you want to destroy disk ‘{0}’ of VirtualBox instance ‘{1}’?".format(
                         disk_name, self.name
@@ -532,7 +532,7 @@ class VirtualBoxState(MachineState):
         if not self.started:
             modifyvm_args = [
                 "--memory",
-                str(defn.config["virtualbox"]["memorySize"]),
+                str(defn.config.virtualbox.memorySize),
                 "--vram",
                 "10",
                 "--nictype1",

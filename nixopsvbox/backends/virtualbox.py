@@ -548,14 +548,14 @@ class VirtualBoxState(MachineState):
                 "--paravirtprovider",
                 "kvm",
             ]
-            vcpus = defn.config["virtualbox"]["vcpu"]  # None or integer
+            vcpus = defn.config.virtualbox.vcpu  # None or integer
             if vcpus is not None:
                 modifyvm_args.extend(["--cpus", str(vcpus)])
             # Include arbitrary additional arguments
-            modifyvm_args.extend(defn.config["virtualbox"]["vmFlags"])
+            modifyvm_args.extend(defn.config.virtualbox.vmFlags)
             self._logged_exec(["VBoxManage", "modifyvm", self.vm_id] + modifyvm_args)
 
-            self._headless = defn.config["virtualbox"]["headless"]
+            self._headless = defn.config.virtualbox.headless
             self._start()
 
         if not self.private_ipv4 or check:

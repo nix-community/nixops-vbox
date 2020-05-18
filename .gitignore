@@ -11,3 +11,4 @@ tags
 tests/test.nixops*
 .mypy_cache/
 *.egg-info
+*.vmdk.xz

@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import os
-import sys
 import time
 import shutil
-import stat
 from nixops.backends import MachineDefinition, MachineState
 from nixops.nix_expr import RawValue
 import nixops.known_hosts
@@ -119,8 +117,8 @@ class VirtualBoxState(MachineState):
                 "unable to get info on VirtualBox VM ‘{0}’".format(self.name)
             )
         vminfo = {}
-        for l in lines:
-            (k, v) = l.split("=", 1)
+        for line in lines:
+            (k, v) = line.split("=", 1)
             vminfo[k] = v if not len(v) or v[0] != '"' else v[1:-1]
         return vminfo
 
@@ -184,7 +182,7 @@ class VirtualBoxState(MachineState):
 
     def _update_disk(self, name, state):
         disks = self.disks
-        if state == None:
+        if state is None:
             disks.pop(name, None)
         else:
             disks[name] = state
@@ -192,7 +190,7 @@ class VirtualBoxState(MachineState):
 
     def _update_shared_folder(self, name, state):
         shared_folders = self.shared_folders
-        if state == None:
+        if state is None:
             shared_folders.pop(name, None)
         else:
             shared_folders[name] = state
@@ -202,13 +200,13 @@ class VirtualBoxState(MachineState):
         self.log_start("waiting for IP address...")
         while True:
             self._update_ip()
-            if self.private_ipv4 != None:
+            if self.private_ipv4 is not None:
                 break
             time.sleep(1)
             self.log_continue(".")
         self.log_end(" " + self.private_ipv4)
 
-    def create(self, defn, check, allow_reboot, allow_recreate):
+    def create(self, defn, check, allow_reboot, allow_recreate):  # noqa: C901
         assert isinstance(defn, VirtualBoxDefinition)
 
         if self.state != self.UP or check:

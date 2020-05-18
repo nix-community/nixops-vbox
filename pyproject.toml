@@ -12,6 +12,7 @@ nixops = {git = "https://github.com/adisbladis/nixops.git", rev = "master"}
 [tool.poetry.dev-dependencies]
 mypy = "^0.770"
 flake8 = "^3.8.1"
+black = "^19.10b0"
 
 [tool.poetry.plugins."nixops"]
 vbox = "nixopsvbox.plugin:load"

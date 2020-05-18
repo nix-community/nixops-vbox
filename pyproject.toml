@@ -2,7 +2,7 @@
 name = "nixopsvbox"
 version = "1.7"
 description = "NixOps backend for VirtualBox"
-authors = ["adisbladis <amine.chikhaoui91@gmail.com>"]
+authors = ["Amine Chikhaoui <amine.chikhaoui91@gmail.com>"]
 license = "LGPL-3.0-only"
 
 [tool.poetry.dependencies]

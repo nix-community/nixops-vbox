@@ -8,7 +8,7 @@ from nixops.nix_expr import RawValue
 import nixops.known_hosts
 
 
-sata_ports = 8
+SATA_PORTS = 8
 
 
 class VirtualBoxDefinition(MachineDefinition):
@@ -279,7 +279,7 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
                     "--add",
                     "sata",
                     self._vbox_flag_sataportcount,
-                    str(sata_ports),
+                    str(SATA_PORTS),
                     "--bootable",
                     "on",
                     "--hostiocache",
@@ -427,10 +427,10 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
             if not disk_state.get("attached", False):
                 self.log("attaching disk ‘{0}’...".format(disk_name))
 
-                if disk_def["port"] >= sata_ports:
+                if disk_def["port"] >= SATA_PORTS:
                     raise Exception(
                         "SATA port number {0} of disk ‘{1}’ exceeds maximum ({2})".format(
-                            disk_def["port"], disk_name, sata_ports
+                            disk_def["port"], disk_name, SATA_PORTS
                         )
                     )
 

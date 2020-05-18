@@ -8,7 +8,7 @@ import stat
 from nixops.backends import MachineDefinition, MachineState
 from nixops.nix_expr import RawValue
 import nixops.known_hosts
-from distutils import spawn
+
 
 sata_ports = 8
 
@@ -20,8 +20,8 @@ class VirtualBoxDefinition(MachineDefinition):
     def get_type(cls):
         return "virtualbox"
 
-    def __init__(self, xml, config):
-        MachineDefinition.__init__(self, xml, config)
+    def __init__(self, name, config):
+        super().__init__(name, config)
 
 
 class VirtualBoxState(MachineState):
@@ -47,7 +47,7 @@ class VirtualBoxState(MachineState):
     disk_attached = nixops.util.attr_property("virtualbox.diskAttached", False, bool)
 
     def __init__(self, depl, name, id):
-        MachineState.__init__(self, depl, name, id)
+        super().__init__(depl, name, id)
         self._disk_attached = False
 
     @property
@@ -181,7 +181,7 @@ class VirtualBoxState(MachineState):
         self.set_common_state(defn)
 
         # check if VBoxManage is available in PATH
-        if not spawn.find_executable("VBoxManage"):
+        if not shutil.which("VBoxManage"):
             raise Exception("VirtualBox is not installed, please install VirtualBox")
 
         if not self.vm_id:
@@ -226,7 +226,7 @@ class VirtualBoxState(MachineState):
 
 
         # Create missing shared folders
-        for sf_name, sf_def in defn.config["virtualbox"]["sharedFolders"].items():
+        for sf_name, sf_def in list(defn.config["virtualbox"]["sharedFolders"].items()):
             sf_state = self.shared_folders.get(sf_name, {})
 
             if not sf_state.get('added', False):
@@ -246,7 +246,7 @@ class VirtualBoxState(MachineState):
                 self._update_shared_folder(sf_name, sf_state)
 
         # Remove obsolete shared folders
-        for sf_name, sf_state in self.shared_folders.items():
+        for sf_name, sf_state in list(self.shared_folders.items()):
             if sf_name not in defn.config["virtualbox"]["sharedFolders"]:
                 if not self.started:
                     self.log("removing shared folder ‘{0}’".format(sf_name))
@@ -263,7 +263,7 @@ class VirtualBoxState(MachineState):
 
 
         # Create missing disks.
-        for disk_name, disk_def in defn.config["virtualbox"]["disks"].items():
+        for disk_name, disk_def in list(defn.config["virtualbox"]["disks"].items()):
             disk_state = self.disks.get(disk_name, {})
 
             if not disk_state.get('created', False):
@@ -303,7 +303,7 @@ class VirtualBoxState(MachineState):
                 if disk_def['port'] >= sata_ports:
                     raise Exception("SATA port number {0} of disk ‘{1}’ exceeds maximum ({2})".format(disk_def['port'], disk_name, sata_ports))
 
-                for disk_name2, disk_state2 in self.disks.items():
+                for disk_name2, disk_state2 in list(self.disks.items()):
                     if disk_name != disk_name2 and disk_state2.get('attached', False) and \
                             disk_state2['port'] == disk_def['port']:
                         raise Exception("cannot attach disks ‘{0}’ and ‘{1}’ to the same SATA port on VirtualBox machine ‘{2}’".format(disk_name, disk_name2, self.name))
@@ -320,7 +320,7 @@ class VirtualBoxState(MachineState):
         # even better, handle them (e.g. resize existing disks).
 
         # Destroy obsolete disks.
-        for disk_name, disk_state in self.disks.items():
+        for disk_name, disk_state in list(self.disks.items()):
             if disk_name not in defn.config["virtualbox"]["disks"]:
                 if not self.depl.logger.confirm("are you sure you want to destroy disk ‘{0}’ of VirtualBox instance ‘{1}’?".format(disk_name, self.name)):
                     raise Exception("not destroying VirtualBox disk ‘{0}’".format(disk_name))

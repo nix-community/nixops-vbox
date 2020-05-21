@@ -7,7 +7,7 @@ license = "LGPL-3.0-only"
 
 [tool.poetry.dependencies]
 python = "^3.7"
-nixops = {git = "https://github.com/adisbladis/nixops.git", rev = "master"}
+nixops = {git = "https://github.com/NixOS/nixops.git", rev = "master"}
 
 [tool.poetry.dev-dependencies]
 mypy = "^0.770"

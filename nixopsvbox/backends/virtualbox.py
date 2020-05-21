@@ -6,8 +6,8 @@ import shutil
 from nixops.backends import MachineDefinition, MachineState
 from nixops.nix_expr import RawValue
 import nixops.known_hosts
-from typing import Any, Sequence, Optional, Mapping
-from nixops.state import StateDict, RecordId
+from typing import Sequence, Optional, Mapping
+from nixops.state import RecordId
 
 
 SATA_PORTS = 8
@@ -234,9 +234,9 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
             self.log_continue(".")
         self.log_end(" " + self.private_ipv4)
 
-    def create(
+    def create(  # noqa: C901
         self, defn: VirtualBoxDefinition, check, allow_reboot, allow_recreate
-    ):  # noqa: C901
+    ):
         if self.state != self.UP or check:
             self.check()
 

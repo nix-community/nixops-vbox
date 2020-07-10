@@ -1,24 +1,30 @@
 import os.path
 import nixops.plugins
+from nixops.plugins import Plugin
 
 
-@nixops.plugins.hookimpl
-def nixexprs():
-    expr_path = os.path.realpath(
-        os.path.dirname(__file__) + "/../../../../share/nix/nixops-vbox"
-    )
-    if not os.path.exists(expr_path):
+class NixopsVboxPlugin(Plugin):
+    @staticmethod
+    def nixexprs():
         expr_path = os.path.realpath(
-            os.path.dirname(__file__) + "/../../../../../share/nix/nixops-vbox"
+            os.path.dirname(__file__) + "/../../../../share/nix/nixops-vbox"
         )
-    if not os.path.exists(expr_path):
-        expr_path = os.path.dirname(__file__) + "/../nix"
+        if not os.path.exists(expr_path):
+            expr_path = os.path.realpath(
+                os.path.dirname(__file__) + "/../../../../../share/nix/nixops-vbox"
+            )
+        if not os.path.exists(expr_path):
+            expr_path = os.path.dirname(__file__) + "/../nix"
 
-    return [expr_path]
+        return [expr_path]
+
+    @staticmethod
+    def load():
+        return [
+            "nixopsvbox.backends.virtualbox",
+        ]
 
 
 @nixops.plugins.hookimpl
-def load():
-    return [
-        "nixopsvbox.backends.virtualbox",
-    ]
+def plugin():
+    return NixopsVboxPlugin()

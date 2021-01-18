@@ -618,7 +618,7 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
 
         time.sleep(1)  # hack to work around "machine locked" errors
 
-        nixops.known_hosts.update(self.private_ipv4, None, self.public_host_key)
+        nixops.known_hosts.remove(self.private_ipv4, self.public_host_key)
 
         self._logged_exec(["VBoxManage", "unregistervm", "--delete", self.vm_id])
 

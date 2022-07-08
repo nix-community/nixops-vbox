@@ -405,6 +405,7 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
                             checkConfigurationOptions=False,
                             attr='nodes."{0}".config.deployment.virtualbox.disks.{1}.baseImage'.format(self.name, disk_name),
                             pluginNixExprs=PluginManager.nixexprs(),
+                            build=True,
                         )
                     self._logged_exec(
                         [

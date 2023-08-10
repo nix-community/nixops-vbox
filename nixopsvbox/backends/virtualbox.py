@@ -9,6 +9,12 @@ import nixops.known_hosts
 from typing import Sequence, Optional, Mapping
 from nixops.state import RecordId
 
+import nixops
+
+from nixops.plugins.manager import (
+    PluginManager,
+)
+
 
 SATA_PORTS = 8
 
@@ -388,28 +394,19 @@ class VirtualBoxState(MachineState[VirtualBoxDefinition]):
                 disk_path = "{0}/{1}.vdi".format(vm_dir, disk_name)
 
                 base_image = disk_def.baseImage
+
                 if base_image:
                     # Clone an existing disk image.
                     if base_image == "drv":
-                        # FIXME: move this to deployment.py.
-                        base_image = self._logged_exec(
-                            ["nix-build"]
-                            + self.depl._eval_flags(self.depl.nix_exprs)
-                            + [
-                                "--arg",
-                                "checkConfigurationOptions",
-                                "false",
-                                "-A",
-                                'nodes."{0}".config.deployment.virtualbox.disks.{1}.baseImage'.format(
-                                    self.name, disk_name
-                                ),
-                                "-o",
-                                "{0}/vbox-image-{1}".format(
-                                    self.depl.tempdir, self.name
-                                ),
-                            ],
-                            capture_stdout=True,
-                        ).rstrip()
+                        base_image = nixops.evaluation.eval(
+                            networkExpr=self.depl.network_expr,
+                            uuid=self.depl.uuid,
+                            deploymentName=self.depl.name or "",
+                            checkConfigurationOptions=False,
+                            attr='nodes."{0}".config.deployment.virtualbox.disks.{1}.baseImage'.format(self.name, disk_name),
+                            pluginNixExprs=PluginManager.nixexprs(),
+                            build=True,
+                        )
                     self._logged_exec(
                         [
                             "VBoxManage",
